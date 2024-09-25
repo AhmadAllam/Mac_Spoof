@@ -1,29 +1,35 @@
 #!/bin/bash
 clear
-#Variables 
 INTERFACE="wlan0"
 OUTPUT_FILE="mac.txt"
 
-# Check if arp-scan is installed
+disable_ipv6() {
+    sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1
+    sysctl -w net.ipv6.conf.default.disable_ipv6=1 >/dev/null 2>&1
+    sysctl -w net.ipv6.conf.lo.disable_ipv6=1 >/dev/null 2>&1
+}
+
+set_dns() {
+    echo "nameserver 8.8.8.8" > /etc/resolv.conf
+    echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+}
+
 if ! command -v arp-scan &> /dev/null; then
     echo "Error: arp-scan is not installed. Please install it to proceed."
     exit 1
 fi
 
-# Check if the specified interface exists
 if ! ip link show "$INTERFACE" &> /dev/null; then
     echo "Error: The interface $INTERFACE does not exist."
     exit 1
 fi
 
-#colors
 red="\e[31m"
 green="\e[32m"
 yelo="\e[1;33m"
 cyn="\e[36m"
 nc="\e[0m"
 
-#function_loop
 loopS () {
 for (( i=0; i<${#text}; i++ )); do
     echo -n "${text:$i:1}"
@@ -37,7 +43,7 @@ for (( i=0; i<${#text}; i++ )); do
     sleep 0.02
 done
 }
-#function_my cat
+
 mycat () {
 echo -e "${yelo} "
 cat << "caty" 
@@ -55,15 +61,12 @@ _____________________
 caty
 }
 
-#function_banner
 banner () {
 text="spoof mac address include internet by "
 loopF
 printf "${nc}@AhmadAllam${nc}"
 }
 
-
-#function_menu
 menu () {
 echo ""
 echo ""
@@ -73,13 +76,10 @@ echo -e " [0]:${cyn}help ${nc} "
 echo -e ""
 echo ""
 
-#choice
 printf "${yelo}What do you want${nc} : "
 read -p "" entry
 
-#function_Get
 Get () {
-# Run arp-scan and filter the output
 arp-scan --interface="$INTERFACE" --localnet | awk '/^[0-9]/ { 
     if ($3 !~ /Ubiquiti/ && 
         $3 !~ /TP-Link/ && 
@@ -99,7 +99,6 @@ arp-scan --interface="$INTERFACE" --localnet | awk '/^[0-9]/ {
 echo " "
 }
 
-#function_Set
 Set () {
 if [ ! -f "mac.txt" ]; then
     echo "mac.txt does not exist."
@@ -110,9 +109,9 @@ while IFS= read -r MAC; do
     ip link set dev $INTERFACE down
     ip link set dev $INTERFACE address "$MAC"
     ip link set dev $INTERFACE up
-
-    sleep 7
-
+    
+    sleep 10
+    disable_ipv6
     if curl -s --head http://www.google.com | grep "200 OK" > /dev/null; then
         echo "Good $MAC allows internet access."
         break
@@ -129,83 +128,80 @@ echo "Finished processing all MAC addresses."
 echo " "
 }
 
-#cases
 case $entry in
-	  1 | 01)
-	  clear
-      text="Wait , Scanning for devices on the network"
-      echo -e "${green} "
-      loopF
-      echo -e "${nc} "
-      echo " "
-      Get
-      text="Done ✓ now try Set option to change the mac :) "
-      echo -e "${green} "
-      loopF
-      echo -e "${nc} "
-      echo " "
-      menu
-      ;;
-      
-	2 | 02)
-	  clear
-      text="Wait , Connect to your WI-FI If you see (Saved)"
-      echo -e "${green} "
-      loopF
-      echo -e "${nc} "
-      echo " "
-      Set
-      text="Congratulations ✓ interesting with internet:) "
-      echo -e "${green} "
-      loopF
-      echo -e "${nc} "
-      echo " "
-      menu
-      ;;
-	
-	0 | 00)
+  1 | 01)
   clear
-    echo -e "${green} "
-    text="               ««««<by_AhmadAllam>»»»»"
-    loopF
-    echo -e "${nc} "
-    echo "       Read GitHub readme file to understand  "
-    echo "                     goodbye ;)  "
-    
-    printf "\n \n \n \n"
-    menu
- ;;
+  text="Wait , Scanning for devices on the network"
+  echo -e "${green} "
+  loopF
+  echo -e "${nc} "
+  echo " "
+  Get
+  text="Done ✓ now try Set option to change the mac :) "
+  echo -e "${green} "
+  loopF
+  echo -e "${nc} "
+  echo " "
+  menu
+  ;;
+  
+  2 | 02)
+  clear
+  text="Wait , Connect to your WI-FI If you see (Saved)"
+  echo -e "${green} "
+  loopF
+  echo -e "${nc} "
+  echo " "
+  Set
+  text="Congratulations ✓ interesting with internet:) "
+  echo -e "${green} "
+  loopF
+  echo -e "${nc} "
+  echo " "
+  menu
+  ;;
+  
+  0 | 00)
+  clear
+  echo -e "${green} "
+  text="               ««««<by_AhmadAllam>»»»»"
+  loopF
+  echo -e "${nc} "
+  echo "       Read GitHub readme file to understand  "
+  echo "                     goodbye ;)  "
+  
+  printf "\n \n \n \n"
+  menu
+  ;;
  
-    *)
-	  clear
-      echo -e "${red} "
-      text="oops, looks like you don't want anything."
-      loopF
-      echo -e "${nc} "
-      menu
-      ;;
-    esac
+  *)
+  clear
+  echo -e "${red} "
+  text="oops, looks like you don't want anything."
+  loopF
+  echo -e "${nc} "
+  menu
+  ;;
+esac
 
 }
 
-#function_reset
 reset_color() {
-	tput sgr0   # reset attributes
-	tput op     # reset color
+    tput sgr0
+    tput op
 }
 
-#function_goodbye
 goodbye () {
 echo -e "${red} "
-      text="thanks & goodbye."
-      loopF
-      echo -e "${nc} "
-      reset_color
-      exit
+  text="thanks & goodbye."
+  loopF
+  echo -e "${nc} "
+  reset_color
+  exit
 }
 trap goodbye INT
 
-##call functions
 mycat
 banner
+set_dns
 menu
