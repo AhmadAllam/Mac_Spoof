@@ -80,52 +80,54 @@ printf "${yelo}What do you want${nc} : "
 read -p "" entry
 
 Get () {
-arp-scan --interface="$INTERFACE" --localnet | awk '/^[0-9]/ { 
-    if ($3 !~ /Ubiquiti/ && 
-        $3 !~ /TP-Link/ && 
-        $3 !~ /D-Link/ && 
-        $3 !~ /Netgear/ && 
-        $3 !~ /Cisco/ && 
-        $3 !~ /Linksys/ && 
-        $3 !~ /Asus/ && 
-        $3 !~ /Zyxel/ && 
-        $3 !~ /Belkin/ && 
-        $3 !~ /ZTE/) 
-    { 
-        print $2 
-    } 
-}' | tee "$OUTPUT_FILE"
-
-echo " "
+    arp-scan --interface="$INTERFACE" --localnet | awk '/^[0-9]/ { 
+        if ($3 !~ /Ubiquiti/ && 
+            $3 !~ /TP-Link/ && 
+            $3 !~ /D-Link/ && 
+            $3 !~ /Netgear/ && 
+            $3 !~ /Cisco/ && 
+            $3 !~ /Linksys/ && 
+            $3 !~ /Asus/ && 
+            $3 !~ /Zyxel/ && 
+            $3 !~ /Belkin/ && 
+            $3 !~ /ZTE/) 
+        { 
+            print $2 
+        } 
+    }' | sort | uniq >> "$OUTPUT_FILE"
+    sort -u -o "$OUTPUT_FILE" "$OUTPUT_FILE"
+    echo " "
 }
 
 Set () {
-if [ ! -f "mac.txt" ]; then
-    echo "mac.txt does not exist."
-    exit 1
-fi
-
-while IFS= read -r MAC; do
-    ip link set dev $INTERFACE down
-    ip link set dev $INTERFACE address "$MAC"
-    ip link set dev $INTERFACE up
-    
-    sleep 10
-    disable_ipv6
-    if curl -s --head http://www.google.com | grep "200 OK" > /dev/null; then
-        echo "Good $MAC allows internet access."
-        break
-    else
-        echo "Sorry $MAC no internet access."
+    if [ ! -f "mac.txt" ]; then
+        echo "mac.txt does not exist."
+        exit 1
     fi
 
-    ip link set dev $INTERFACE down
-done < "mac.txt"
+    touch live.txt
 
-ip link set dev $INTERFACE up
-echo " "
-echo "Finished processing all MAC addresses."
-echo " "
+    while IFS= read -r MAC; do
+        ip link set dev $INTERFACE down
+        ip link set dev $INTERFACE address "$MAC"
+        ip link set dev $INTERFACE up
+        
+        sleep 10
+        disable_ipv6
+        if curl -s --head http://www.google.com | grep "200 OK" > /dev/null; then
+            echo "Good $MAC allows internet access."
+            echo "$MAC" >> live.txt
+        else
+            echo "Sorry $MAC no internet access."
+        fi
+
+        ip link set dev $INTERFACE down
+    done < "mac.txt"
+
+    ip link set dev $INTERFACE up
+    echo " "
+    echo "Finished processing all MAC addresses."
+    echo " "
 }
 
 case $entry in
