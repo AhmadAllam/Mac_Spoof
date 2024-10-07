@@ -10,7 +10,7 @@ This script modifies your MAC address to mimic the addresses of other devices co
 
 ## Dependencies
 
-- An internet connection (required only for initial installation)
+- Xposed Module (MacSposed) to allow script change mac
 
 ## Installing & Executing
 
@@ -51,7 +51,3 @@ This script modifies your MAC address to mimic the addresses of other devices co
 - **Dev. Ahmad Allam**
   - My account: [Telegram](https://t.me/echo_Allam)
   - Don't forget Palestine ❤️
-
----
-
-If you need any further adjustments or additions, feel free to let me know!
