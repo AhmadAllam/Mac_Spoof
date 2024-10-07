@@ -1,38 +1,57 @@
-## mac spoofing for Android 
+# MAC Spoofing for Android
 
-simple script for spoof mac in Android using nethunter
+## Overview
+
+This script allows changing the MAC address on Android devices using Nethunter. By changing your MAC address, you can access free internet from devices connected to the same network.
 
 ## Description
 
-this script get free internet by changing mac address From other devices connected to you on the same network
+This script modifies your MAC address to mimic the addresses of other devices connected to your Wi-Fi network, providing a means to gain internet access.
 
 ## Dependencies
 
-* internet connection for installation some Requirements for the first time only
+- An internet connection (required only for initial installation)
 
-### Installing & Executing
+## Installing & Executing
 
-* apt install arp-scan
-* cd /Mac_Spoof
-* chmod +x *
-* ./Mac_Spoof.sh
-* That's it⁦ ^_^⁩
+1. Install the necessary dependencies:
+   ```bash
+   apt install net-tools
+   ```
+2. Navigate to the script directory:
+   ```bash
+   cd /Mac_Spoof
+   ```
+3. Change file permissions:
+   ```bash
+   chmod +x *
+   ```
+4. Execute the script:
+   ```bash
+   ./Mac_Spoof.sh
+   ```
 
+## Help Commands
 
-## Help
+- **[1]: Get Mac**
+  - Scan the local network to retrieve the addresses of all connected devices except those listed in `exclude.txt`.
 
-* [1]:Get Mac
-    * Obtain the MAC address of devices connected to the same Wi-Fi network and store it to use for the next command number 2 :)
+- **[2]: Set Mac (from mac.txt)**
+  - Change your MAC address to an address from `mac.txt`, which contains all the addresses that were retrieved.
 
-* [2]:Set Mac
-    * This command is to test the addresses obtained by the previous command and install the address that has an Internet connection only
-    
-* [0]:about & help
-    * show some help
+- **[3]: Set Mac (from live.txt)**
+  - Change your MAC address to one from `live.txt`, which contains addresses that have internet access.
 
+- **[0]: About & Help**
+  - Display help information and credits.
+  - To exit , press **CTRL + C**.
 
 ## Authors
 
-* dev. AhmadAllam
-    * my account. [telegram](https://t.me/echo_Allam)
-    * don't forget Palestine❤️
+- **Dev. Ahmad Allam**
+  - My account: [Telegram](https://t.me/echo_Allam)
+  - Don't forget Palestine ❤️
+
+---
+
+If you need any further adjustments or additions, feel free to let me know!
