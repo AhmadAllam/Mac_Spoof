@@ -2,6 +2,8 @@
 clear
 INTERFACE="wlan0"
 OUTPUT_FILE="mac.txt"
+EXCLUDE_FILE="exclude.txt"
+touch live.txt
 
 disable_ipv6() {
     sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1
@@ -30,23 +32,16 @@ yelo="\e[1;33m"
 cyn="\e[36m"
 nc="\e[0m"
 
-loopS () {
-for (( i=0; i<${#text}; i++ )); do
-    echo -n "${text:$i:1}"
-    sleep 0.04
-done
-}
-
 loopF () {
-for (( i=0; i<${#text}; i++ )); do
-    echo -n "${text:$i:1}"
-    sleep 0.02
-done
+    for (( i=0; i<${#text}; i++ )); do
+        echo -n "${text:$i:1}"
+        sleep 0.02
+    done
 }
 
 mycat () {
-echo -e "${yelo} "
-cat << "caty" 
+    echo -e "${yelo} "
+    cat << "caty" 
 ,_     _
  |\\_,-~/
  / _  _ |    ,--.
@@ -62,50 +57,47 @@ caty
 }
 
 banner () {
-text="spoof mac address include internet by "
-loopF
-printf "${nc}@AhmadAllam${nc}"
+    text="spoof mac address include internet by "
+    loopF
+    printf "${nc}@AhmadAllam${nc}"
 }
 
-menu () {
-echo ""
-echo ""
-echo -e " [1]:${cyn}Get Mac${nc} "
-echo -e " [2]:${cyn}Set Mac${nc} "
-echo -e " [0]:${cyn}help ${nc} "
-echo -e ""
-echo ""
+load_exclude_list() {
+    if [ -f "$EXCLUDE_FILE" ]; then
+        mapfile -t EXCLUDE_LIST < "$EXCLUDE_FILE"
+        EXCLUDE_PATTERN=$(IFS=\|; echo "${EXCLUDE_LIST[*]}")
+    else
+        echo " "
+        echo "Exclude file not found. Proceeding without exclusions."
+        echo " "
+        EXCLUDE_PATTERN=""
+    fi
+}
 
-printf "${yelo}What do you want${nc} : "
-read -p "" entry
-
-Get () {
-    arp-scan --interface="$INTERFACE" --localnet | awk '/^[0-9]/ { 
-        if ($3 !~ /Ubiquiti/ && 
-            $3 !~ /TP-Link/ && 
-            $3 !~ /D-Link/ && 
-            $3 !~ /Netgear/ && 
-            $3 !~ /Cisco/ && 
-            $3 !~ /Linksys/ && 
-            $3 !~ /Asus/ && 
-            $3 !~ /Zyxel/ && 
-            $3 !~ /Belkin/ && 
-            $3 !~ /ZTE/) 
+Get() {
+    load_exclude_list
+    arp-scan --interface="$INTERFACE" --localnet | awk -v exclude="$EXCLUDE_PATTERN" '
+    BEGIN {IGNORECASE = 1}
+    /^[0-9]/ {
+        if ($3 !~ exclude)
         { 
             print $2 
         } 
-    }' | sort | uniq >> "$OUTPUT_FILE"
+    }' | while read -r MAC; do
+        if ! grep -qi "$MAC" live.txt; then
+            echo "$MAC" >> "$OUTPUT_FILE"
+        fi
+    done
     sort -u -o "$OUTPUT_FILE" "$OUTPUT_FILE"
     echo " "
 }
 
-Set () {
-    if [ ! -f "mac.txt" ]; then
-        echo "mac.txt does not exist."
+Set() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        echo "$file does not exist."
         exit 1
     fi
-
-    touch live.txt
 
     while IFS= read -r MAC; do
         ip link set dev $INTERFACE down
@@ -115,77 +107,123 @@ Set () {
         sleep 10
         disable_ipv6
         if curl -s --head http://www.google.com | grep "200 OK" > /dev/null; then
-            echo "Good $MAC allows internet access."
+            echo -e "${green}Good $MAC allows internet access.${nc}"
             echo "$MAC" >> live.txt
+            sed -i "/$MAC/d" "$file"
         else
             echo "Sorry $MAC no internet access."
         fi
 
         ip link set dev $INTERFACE down
-    done < "mac.txt"
+    done < "$file"
 
     ip link set dev $INTERFACE up
     echo " "
-    echo "Finished processing all MAC addresses."
+    echo "Finished processing all MAC addresses from $file."
     echo " "
 }
 
-case $entry in
-  1 | 01)
-  clear
-  text="Wait , Scanning for devices on the network"
-  echo -e "${green} "
-  loopF
-  echo -e "${nc} "
-  echo " "
-  Get
-  text="Done ✓ now try Set option to change the mac :) "
-  echo -e "${green} "
-  loopF
-  echo -e "${nc} "
-  echo " "
-  menu
-  ;;
-  
-  2 | 02)
-  clear
-  text="Wait , Connect to your WI-FI If you see (Saved)"
-  echo -e "${green} "
-  loopF
-  echo -e "${nc} "
-  echo " "
-  Set
-  text="Congratulations ✓ interesting with internet:) "
-  echo -e "${green} "
-  loopF
-  echo -e "${nc} "
-  echo " "
-  menu
-  ;;
-  
-  0 | 00)
-  clear
-  echo -e "${green} "
-  text="               ««««<by_AhmadAllam>»»»»"
-  loopF
-  echo -e "${nc} "
-  echo "       Read GitHub readme file to understand  "
-  echo "                     goodbye ;)  "
-  
-  printf "\n \n \n \n"
-  menu
-  ;;
- 
-  *)
-  clear
-  echo -e "${red} "
-  text="oops, looks like you don't want anything."
-  loopF
-  echo -e "${nc} "
-  menu
-  ;;
-esac
+Set2() {
+    for MAC in $(cat live.txt); do
+        if [[ $MAC =~ ^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$ ]]; then
+        
+            echo -e "${yelo}Press Enter to change to $MAC...${nc}"
+            
+            read confirmation
+            
+            if [ -z "$confirmation" ]; then
+                ip link set dev $INTERFACE down
+                ip link set dev $INTERFACE address "$MAC"
+                ip link set dev $INTERFACE up
+                           
+                echo -e "MAC changed to $MAC"
+            fi
+        fi
+    done
+    ip link set dev $INTERFACE up
+    echo " "
+}
 
+
+menu () {
+    echo ""
+    echo ""
+    echo -e " [1]:${cyn}Get Mac${nc} "
+    echo -e " [2]:${cyn}Set Mac (from mac.txt)${nc} "
+    echo -e " [3]:${cyn}Set Mac (from live.txt)${nc} "
+    echo -e " [0]:${cyn}help ${nc} "
+    echo -e ""
+    echo ""
+
+    printf "${yelo}What do you want${nc} : "
+    read -p "" entry
+
+    case $entry in
+      1 | 01)
+      clear
+      text="Wait , Scanning for devices on the network"
+      echo -e "${green} "
+      loopF
+      echo -e "${nc} "
+      echo " "
+      Get
+      text="Done ✓ now try Set options to change your mac :) "
+      echo -e "${green} "
+      loopF
+      echo -e "${nc} "
+      echo " "
+      menu
+      ;;
+      
+      2 | 02)
+      clear
+      text="Wait , Connect to your WI-FI If you see (Saved)"
+      echo -e "${green} "
+      loopF
+      echo -e "${nc} "
+      echo " "
+      Set "mac.txt"
+      text="All done ✓."
+      echo -e "${green} "
+      loopF
+      echo -e "${nc} "
+      echo " "
+      menu
+      ;;
+      
+      3 | 03)
+      clear
+      Set2
+      echo -e "${green} "
+      text="Finished processing MACs from live.txt"
+      loopF
+      echo -e "${nc} "
+      echo " "
+      menu
+      ;;
+
+      0 | 00)
+      clear
+      echo -e "${green} "
+      text="               ««««<by_AhmadAllam>»»»»"
+      loopF
+      echo -e "${nc} "
+      echo "       Read GitHub readme file to understand  "
+      echo "                     goodbye ;)  "
+      
+      printf "\n \n \n \n"
+      menu
+      ;;
+     
+      *)
+      clear
+      echo -e "${red} "
+      text="oops, looks like you don't want anything."
+      loopF
+      echo -e "${nc} "
+      menu
+      ;;
+    esac
 }
 
 reset_color() {
@@ -194,12 +232,12 @@ reset_color() {
 }
 
 goodbye () {
-echo -e "${red} "
-  text="thanks & goodbye."
-  loopF
-  echo -e "${nc} "
-  reset_color
-  exit
+    echo -e "${red} "
+    text="thanks & goodbye."
+    loopF
+    echo -e "${nc} "
+    reset_color
+    exit
 }
 trap goodbye INT
 
