@@ -137,13 +137,13 @@ Set() {
 Set2() {
     for MAC in $(cat "$LIVE_FILE"); do
         if [[ $MAC =~ ^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$ ]]; then
-            echo -e "${yelo}Press Enter to change to $MAC...${nc}"
+            echo -e "Press Enter to change to $MAC..."
             read confirmation
             if [ -z "$confirmation" ]; then
                 ip link set dev $INTERFACE down
                 ip link set dev $INTERFACE address "$MAC"
                 ip link set dev $INTERFACE up
-                echo -e "MAC changed to $MAC"
+                echo -e "${yelo}MAC changed to $MAC ${nc}"
             fi
         fi
     done
