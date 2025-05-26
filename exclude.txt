@@ -1,9 +1,6 @@
 Ubiquiti
 UBIQUITI
 ubiquiti
-TP-LINK
-Tp-Link
-tp-link
 TP LINK
 tp link
 tplink
@@ -15,3 +12,4 @@ cisco
 Belkin
 BELKIN
 belkin
+VMware
