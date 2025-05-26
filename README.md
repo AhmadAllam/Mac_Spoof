@@ -33,13 +33,13 @@ This script modifies your MAC address to mimic the addresses of other devices co
 
 ## Help Commands
 
-- **[1]: Get Mac**
+- **[1]: Get Mac from Network**
   - Scan the local network to retrieve the addresses of all connected devices except those listed in `exclude.txt`.
 
-- **[2]: Set Mac (from mac.txt)**
-  - Change your MAC address to an address from `mac.txt`, which contains all the addresses that were retrieved.
+- **[2]: Change mac from mac.txt**
+  - Change your MAC address to an address from `mac.txt`, which contains all the offline and online addresses that were retrieved by choice number one If one of the addresses has internet, it will be moved to live.txt file 
 
-- **[3]: Set Mac (from live.txt)**
+- **[3]: Change mac from live.txt**
   - Change your MAC address to one from `live.txt`, which contains addresses that have internet access.
 
 - **[0]: About & Help**
