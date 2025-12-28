@@ -6,6 +6,7 @@ INTERFACE="wlan0"
 OUTPUT_FILE="mac.txt"
 EXCLUDE_FILE="exclude.txt"
 LIVE_FILE="live.txt"
+SWITCH_FILE="switch.txt"
 DNS1="8.8.8.8"
 DNS2="8.8.4.4"
 GOOGLE_URL="http://www.google.com"
@@ -21,12 +22,7 @@ CHAR_DELAY=0.02
 touch "$OUTPUT_FILE"
 touch "$EXCLUDE_FILE"
 touch "$LIVE_FILE"
-
-disable_ipv6() {
-    sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1
-    sysctl -w net.ipv6.conf.default.disable_ipv6=1 >/dev/null 2>&1
-    sysctl -w net.ipv6.conf.lo.disable_ipv6=1 >/dev/null 2>&1
-}
+touch "$SWITCH_FILE"
 
 set_dns() {
     echo "nameserver $DNS1" > /etc/resolv.conf
@@ -41,6 +37,11 @@ check_requirements() {
 
     if ! ip link show "$INTERFACE" &> /dev/null; then
         echo "Error: The interface $INTERFACE does not exist."
+        exit 1
+    fi
+    
+    if ! command -v curl &> /dev/null; then
+        echo "Error: curl is not installed. Please install it to proceed."
         exit 1
     fi
 }
@@ -67,7 +68,6 @@ mycat() {
  \  _T_/-._( (
  /         `. \
 |         _  \ |
- \ \ ,  /      |
   || |-_\__   /
  ((_/`(____,-'
 ______________________________________
@@ -79,7 +79,8 @@ caty
     echo " [✓] interface :$INTERFACE"
     echo " [✓] Excluded Devices :$EXCLUDE_FILE"
     echo " [✓] Offline Mac File :$OUTPUT_FILE"
-    echo " [✓] Online Mac File  :$LIVE_FILE"
+    echo " [✓] Live Mac File  :$LIVE_FILE"
+    echo " [✓] Switch Mac File  :$SWITCH_FILE"
     echo "______________________________________"
     echo -e "${nc}"
 }
@@ -108,6 +109,12 @@ Get() {
             if [[ $line =~ ^[0-9] ]]; then
                 ip=$(echo "$line" | awk '{print $1}')
                 vendor=$(echo "$line" | awk '{for (i=3; i<=NF; i++) printf "%s ", $i; print ""}' | sed 's/ *$//')
+                
+                # Truncate vendor name to 25 characters if it's longer
+                if [ ${#vendor} -gt 25 ]; then
+                    vendor="${vendor:0:22}..."
+                fi
+
                 if [[ -z "$EXCLUDE_PATTERN" || ! $vendor =~ $EXCLUDE_PATTERN ]]; then
                     printf "${yelo}%-3d | %-25s | %-15s${nc}\n" "$count" "$vendor" "$ip"
                 else
@@ -149,65 +156,77 @@ Set() {
         exit 1
     fi
     trap 'echo -e "${red}returning to main menu...${nc}"; return; menu' INT
-    local count=1
-    printf "${cyn}%s${nc}\n" "------------------------------------------"
-    printf "${cyn}%-30s %-10s${nc}\n" "MAC Address" "Status"
-    printf "${cyn}%s${nc}\n" "------------------------------------------"
+    
+    printf "${cyn}%s${nc}\n" "----------------------------------------------------"
+    printf "${cyn}%-18s | %-15s | %-10s${nc}\n" "MAC" "IP" "Status"
+    printf "${cyn}%s${nc}\n" "----------------------------------------------------"
+    
     while IFS= read -r MAC || [[ -n "$MAC" ]]; do
         if [[ $MAC =~ ^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$ ]]; then
-            ip link set dev $INTERFACE down
-            ip link set dev $INTERFACE address "$MAC"
-            ip link set dev $INTERFACE up
-            sleep 2
-            printf "${yelo}(%d): %-25s${nc}" "$count" "$MAC"
-            dhclient -r $INTERFACE > /dev/null 2>&1
-            timeout 10 dhclient $INTERFACE > /dev/null 2>&1
-            local ip_success=false
-            if ip -4 addr show $INTERFACE | grep -q "inet "; then
-                ip_success=true
-            else
-                timeout 5 dhclient $INTERFACE > /dev/null 2>&1
-                if ip -4 addr show $INTERFACE | grep -q "inet "; then
-                    ip_success=true
+            
+            local current_ip="N/A"
+            local status_text="Offline"
+            local status_color="${red}"
+            local temp_mac="$MAC"
+            
+            printf "\r${yelo}%-18s${nc} | %-15s | %-10s" "$temp_mac" "Checking..." ""
+            ip link set dev "$INTERFACE" down >/dev/null 2>&1
+            ip link set dev "$INTERFACE" address "$MAC" >/dev/null 2>&1
+            ip link set dev "$INTERFACE" up >/dev/null 2>&1
+            
+            sleep 5
+
+            local ip_wait_time=0
+            while [ $ip_wait_time -lt 10 ]; do
+                current_ip=$(ip a show "$INTERFACE" | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+                if [ -n "$current_ip" ]; then
+                    printf "\r${yelo}%-18s${nc} | ${yelo}%-15s${nc} | %-10s" "$temp_mac" "$current_ip" "Checking..."
+                    break
                 fi
-            fi
+                sleep 1
+                ((ip_wait_time++))
+            done
+
             local online=false
-            if [ "$ip_success" = true ]; then
-                timeout 5 curl -s --head "$GOOGLE_URL" | grep -q "200 OK" && online=true
+            if [ "$current_ip" != "N/A" ]; then
+                
+                local curl_wait_time=0
+                while [ $curl_wait_time -lt 5 ]; do
+                    if curl -s --head --connect-timeout 5 "$GOOGLE_URL" | grep -q "200 OK"; then
+                        online=true
+                        break
+                    fi
+                    sleep 1
+                    ((curl_wait_time++))
+                done
             fi
+
             if [ "$online" = true ]; then
-                printf "\r${yelo}(%d): %-25s${nc} ${green}%-10s${nc}\n" "$count" "$MAC" "Online"
+                status_color="${green}"
+                status_text="Online"
                 if ! grep -qi "$MAC" "$LIVE_FILE"; then
                     echo "$MAC" >> "$LIVE_FILE"
                 fi
-                if [ "$file" != "$LIVE_FILE" ]; then
-                    sed -i "/$MAC/d" "$file"
-                fi
-            elif [ "$ip_success" = true ]; then
-                printf "\r${yelo}(%d): %-25s${nc} ${red}%-10s${nc}\n" "$count" "$MAC" "Offline"
-                if ! grep -qi "$MAC" "$OUTPUT_FILE"; then
-                    echo "$MAC" >> "$OUTPUT_FILE"
-                fi
-                if [ "$file" == "$LIVE_FILE" ]; then
+                if [ "$file" != "$LIVE_FILE" ]; then 
                     sed -i "/$MAC/d" "$file"
                 fi
             else
-                printf "\r${yelo}(%d): %-25s${nc} ${red}%-10s${nc}\n" "$count" "$MAC" "IP Failed"
+                status_color="${red}"
+                status_text="Offline"
                 if ! grep -qi "$MAC" "$OUTPUT_FILE"; then
                     echo "$MAC" >> "$OUTPUT_FILE"
                 fi
-                if [ "$file" == "$LIVE_FILE" ]; then
+                if [ "$file" == "$LIVE_FILE" ]; then 
                     sed -i "/$MAC/d" "$file"
                 fi
             fi
-            ip link set dev $INTERFACE down
-            ip addr flush dev $INTERFACE
-            ip link set dev $INTERFACE up
-            ((count++))
-            disable_ipv6
+            
+            printf "\r${yelo}%-18s${nc} | ${yelo}%-15s${nc} | ${status_color}%-10s${nc}\n" "$temp_mac" "$current_ip" "$status_text"
         fi
     done < "$file"
-    ip link set dev $INTERFACE up
+    
+    ip link set dev "$INTERFACE" up >/dev/null 2>&1
+    
     sort -u -o "$LIVE_FILE" "$LIVE_FILE"
     sort -u -o "$OUTPUT_FILE" "$OUTPUT_FILE"
 }
@@ -222,106 +241,99 @@ Set2() {
         fi
     done < "$file"
 
-    local mac_status=()
-    for ((i=0; i<${#original_mac_list[@]}; i++)); do
-        mac_status+=("0") 
-    done
-
-    redraw_table() {
-        clear
-        echo -e "$(tput setaf 11)----------------------------------$(tput sgr0)"
-        echo -e "$(tput setaf 11)#   | New MAC           | Action        $(tput sgr0)"
-        echo -e "$(tput setaf 11)----------------------------------$(tput sgr0)"
-        
-        local display_index=1
-        for i in "${!original_mac_list[@]}"; do
-            local mac_to_display="${original_mac_list[$i]}"
-            local status="${mac_status[$i]}"
-            local current_mac_color_code=$(tput setaf 3)
-
-            if [ "$i" -eq "$current_processing_index_in_loop" ]; then
-                current_mac_color_code=$(tput setaf 4)
-            fi
-
-            case "$status" in
-                "0")
-                    echo -e "${current_mac_color_code}$(printf "%-3d | %-17s | %-15s" "$display_index" "$mac_to_display" "Enter to Get me")$(tput sgr0)"
-                    ;;
-                "1")
-                    echo -e "$(tput setaf 3)$(printf "%-3d | %-17s | %s%s%s" "$display_index" "$mac_to_display" "$(tput setaf 2)" "Done" "$(tput sgr0)")$(tput sgr0)"
-                    ;;
-                "2")
-                    echo -e "$(tput setaf 3)$(printf "%-3d | %-17s | %s%s%s" "$display_index" "$mac_to_display" "$(tput setaf 1)" "Skipped" "$(tput sgr0)")$(tput sgr0)"
-                    ;;
-            esac
-            ((display_index++))
-        done
-    }
-
-    local current_processing_index_in_loop=0
+    clear
+    echo -e "$(tput setaf 11)----------------------------------$(tput sgr0)"
+    echo -e "$(tput setaf 11)#   | New MAC           | Action        $(tput sgr0)"
+    echo -e "$(tput setaf 11)----------------------------------$(tput sgr0)"
+    
+    local display_index=1
     for MAC in "${original_mac_list[@]}"; do
-        redraw_table
+        printf "$(tput setaf 3)%-3d | %-17s | $(tput sgr0)" "$display_index" "$MAC"
         
-        echo ""
-        echo ""
+        read -p "$(tput setaf 11)Enter to Get me: $(tput sgr0)" confirmation
         
-        read -p "$(tput setaf 11)Change MAC to ${MAC}? (Enter/skip): $(tput sgr0)" confirmation
+        tput cuu1
+        tput el
         
         if [ -z "$confirmation" ]; then
             ip link set dev $INTERFACE down >/dev/null 2>&1
             ip link set dev $INTERFACE address "$MAC" >/dev/null 2>&1
             ip link set dev $INTERFACE up >/dev/null 2>&1
-            mac_status[$current_processing_index_in_loop]="1"
+            echo -e "$(tput setaf 3)$(printf "%-3d | %-17s | %s" "$display_index" "$MAC" "$(tput setaf 2)Done")$(tput sgr0)"
         else
-            mac_status[$current_processing_index_in_loop]="2"
+            echo -e "$(tput setaf 3)$(printf "%-3d | %-17s | %s" "$display_index" "$MAC" "$(tput setaf 1)Skipped")$(tput sgr0)"
         fi
         
-        ((current_processing_index_in_loop++))
+        ((display_index++))
     done
     
     ip link set dev $INTERFACE up >/dev/null 2>&1
-    redraw_table
     echo -e "$(tput setaf 2)All MACs processed. Returning to main menu.$(tput sgr0)"
     sleep 2
 }
 
-change_mac_submenu() {
+Set_Switch_Loop() {
     local file="$1"
-    local mode="$2"
-    trap 'echo -e "${red}returning to main menu...${nc}"; menu' INT
-    echo -e "${cyn}"
-    echo " [1]: Automatic MAC Change"
-    echo " [2]: Manual MAC Change"
-    echo -e "${nc}"
-    printf "${green} [?] Choose mode: ${nc}"
-    read -p "" sub_choice
-    case $sub_choice in
-        1 | 01)
-            Set "$file"
-            text="All done ✓."
-            echo -e "${green}"
-            loopF
-            echo -e "${nc}"
-            ;;
-        2 | 02)
-            Set2 "$file"
-            text="All done ✓."
-            echo -e "${green}"
-            loopF
-            echo -e "${nc}"
-            ;;
-        *)
-            echo -e "${red}Invalid choice, returning to main menu.${nc}"
-            ;;
-    esac
+    
+    if [ ! -f "$file" ]; then
+        echo -e "${red}Error: The file $file does not exist. Please create it.${nc}"
+        sleep 2
+        return
+    fi
+    
+    local original_mac_list=()
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$ ]]; then
+            original_mac_list+=("$line")
+        fi
+    done < <(head -n 2 "$file")
+
+    if [ ${#original_mac_list[@]} -eq 0 ]; then
+        echo -e "${red}Error: No valid MAC addresses found in the first two lines of $file. Please check the file content.${nc}"
+        sleep 2
+        return
+    fi
+
+    while true; do
+        clear
+        echo -e "$(tput setaf 11)----------------------------------$(tput sgr0)"
+        echo -e "$(tput setaf 11)#   | New MAC           | Action        $(tput sgr0)"
+        echo -e "$(tput setaf 11)----------------------------------$(tput sgr0)"
+
+        local display_index=1
+        for MAC in "${original_mac_list[@]}"; do
+            printf "$(tput setaf 3)%-3d | %-17s | $(tput sgr0)" "$display_index" "$MAC"
+            
+            read -p "$(tput setaf 11)Enter to Get me: $(tput sgr0)" confirmation
+            
+            tput cuu1
+            tput el
+            
+            if [ -z "$confirmation" ]; then
+                ip link set dev $INTERFACE down >/dev/null 2>&1
+                ip link set dev $INTERFACE address "$MAC" >/dev/null 2>&1
+                ip link set dev $INTERFACE up >/dev/null 2>&1
+                echo -e "$(tput setaf 3)$(printf "%-3d | %-17s | %s" "$display_index" "$MAC" "$(tput setaf 2)Done")$(tput sgr0)"
+            else
+                echo -e "$(tput setaf 3)$(printf "%-3d | %-17s | %s" "$display_index" "$MAC" "$(tput setaf 1)Skipped")$(tput sgr0)"
+            fi
+            
+            ((display_index++))
+        done
+        ip link set dev $INTERFACE up >/dev/null 2>&1
+        sleep 1
+    done
 }
 
 menu() {
     trap 'goodbye' INT
     echo ""
-    echo -e " [1]:${cyn}Get Mac from Network${nc} "
-    echo -e " [2]:${cyn}Change mac from mac.txt${nc} "
-    echo -e " [3]:${cyn}Change mac from live.txt${nc} "
+    echo -e " [1]:${cyn}Get all Mac from Network${nc} "
+    echo -e " [2]:${cyn}Auto Check Status (mac.txt)${nc} "
+    echo -e " [3]:${cyn}Auto Check Status (live.txt)${nc} "
+    echo -e " [4]:${cyn}Manual Check Status (mac.txt)${nc} "
+    echo -e " [5]:${cyn}Manual Check Status (live.txt)${nc} "
+    echo -e " [6]:${cyn}Loop & Switch Manually (switch.txt)${nc} "
     echo -e " [0]:${cyn}help ${nc} "
     echo ""
     printf "${green} [?] What do you want${nc} : "
@@ -329,7 +341,7 @@ menu() {
     case $entry in
         1 | 01)
             clear
-            text="Wait , Scanning for devices on the network"
+            text="Wait, Scanning for devices on the network"
             echo -e "${green}"
             loopF
             echo -e "${nc}"
@@ -342,12 +354,47 @@ menu() {
             ;;
         2 | 02)
             clear
-            change_mac_submenu "$OUTPUT_FILE" "mac.txt"
+            Set "$OUTPUT_FILE"
+            text="All done ✓."
+            echo -e "${green}"
+            loopF
+            echo -e "${nc}"
             menu
             ;;
         3 | 03)
             clear
-            change_mac_submenu "$LIVE_FILE" "live.txt"
+            Set "$LIVE_FILE"
+            text="All done ✓."
+            echo -e "${green}"
+            loopF
+            echo -e "${nc}"
+            menu
+            ;;
+        4 | 04)
+            clear
+            Set2 "$OUTPUT_FILE"
+            text="All done ✓."
+            echo -e "${green}"
+            loopF
+            echo -e "${nc}"
+            menu
+            ;;
+        5 | 05)
+            clear
+            Set2 "$LIVE_FILE"
+            text="All done ✓."
+            echo -e "${green}"
+            loopF
+            echo -e "${nc}"
+            menu
+            ;;
+        6 | 06)
+            clear
+            Set_Switch_Loop "$SWITCH_FILE"
+            text="Swiching loop ended."
+            echo -e "${green}"
+            loopF
+            echo -e "${nc}"
             menu
             ;;
         0 | 00)
@@ -363,7 +410,7 @@ menu() {
         *)
             clear
             echo -e "${red}"
-            text="oops, looks like you don't want anything."
+            text="Oops, looks like you don't want anything."
             loopF
             echo -e "${nc}"
             menu
@@ -379,7 +426,7 @@ reset_color() {
 goodbye() {
     echo -e "${red}"
     echo " "
-    text=" thanks & goodbye."
+    text=" Thanks & goodbye."
     loopF
     echo -e "${nc}"
     reset_color
